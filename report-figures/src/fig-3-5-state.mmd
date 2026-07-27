@@ -1,0 +1,9 @@
+stateDiagram-v2
+  [*] --> Created
+  Created --> Cloning : submit
+  Cloning --> Analyzing : clone ok
+  Cloning --> Failed : clone error
+  Analyzing --> Completed : metrics computed
+  Analyzing --> Failed : not Python / error
+  Completed --> [*]
+  Failed --> [*]

@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/github/callback"
     frontend_url: str = "http://localhost:3000"
 
+    # Comma-separated emails that are auto-promoted to admin on startup.
+    admin_emails: str = ""
+
     model_config = {"env_file": "backend/.env"}
 
 

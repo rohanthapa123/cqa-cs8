@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Lock, Star, RefreshCw, ChevronRight, GitFork, Search, AlertCircle, BarChart3 } from "lucide-react";
+import { Loader2, Lock, Star, RefreshCw, ChevronRight, GitFork, Search, BarChart3, Unlink } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import api from "../api";
+import api, { apiErrorMessage } from "../api";
 import { AnalysisReport } from "../types/analysis";
 import ReportViewer from "../components/analysis/ReportViewer";
 import Button from "../components/ui/Button";
@@ -91,6 +91,7 @@ function GitHubConnectCard({ loading, onConnect }: { loading: boolean; onConnect
 function RepoPanel({
   repos,
   reposLoading,
+  reposError,
   connectLoading,
   analyzing,
   selectedRepo,
@@ -101,6 +102,7 @@ function RepoPanel({
 }: {
   repos: Repo[];
   reposLoading: boolean;
+  reposError: string;
   connectLoading: boolean;
   analyzing: boolean;
   selectedRepo: Repo | null;
@@ -141,6 +143,8 @@ function RepoPanel({
         />
       </div>
 
+      {reposError && <Alert variant="error">{reposError}</Alert>}
+
       {reposLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
@@ -179,6 +183,23 @@ function DashboardContent() {
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [analyzeError, setAnalyzeError] = useState("");
+  const [reposError, setReposError] = useState("");
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const loadRepos = useCallback(async () => {
+    await Promise.resolve(); // defer so effect callers don't set state synchronously
+    setReposLoading(true);
+    try {
+      const { data } = await api.get("/github/repos");
+      setRepos(data);
+      setReposError("");
+    } catch (err) {
+      setRepos([]);
+      setReposError(apiErrorMessage(err, "Could not load repositories. Try reconnecting GitHub."));
+    } finally {
+      setReposLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -192,23 +213,15 @@ function DashboardContent() {
       window.history.replaceState({}, "", "/dashboard");
     }
     if (err) window.history.replaceState({}, "", "/dashboard");
-  }, [searchParams]);
+  }, [searchParams, refreshUser, loadRepos]);
 
   useEffect(() => {
-    if (user?.github_username) loadRepos();
-  }, [user?.github_username]);
-
-  const loadRepos = async () => {
-    setReposLoading(true);
-    try {
-      const { data } = await api.get("/github/repos");
-      setRepos(data);
-    } catch {
-      setRepos([]);
-    } finally {
-      setReposLoading(false);
-    }
-  };
+    const run = async () => {
+      await Promise.resolve();
+      if (user?.github_username) loadRepos();
+    };
+    void run();
+  }, [user?.github_username, loadRepos]);
 
   const connectGithub = async () => {
     setConnectLoading(true);
@@ -228,8 +241,8 @@ function DashboardContent() {
     try {
       const { data } = await api.post("/analyze", { repo_url: repo.html_url });
       setReport(data);
-    } catch (err: any) {
-      setAnalyzeError(err.response?.data?.detail || "Analysis failed. Make sure this is a Python repository.");
+    } catch (err) {
+      setAnalyzeError(apiErrorMessage(err, "Analysis failed. Make sure this is a Python repository."));
     } finally {
       setAnalyzing(false);
     }
@@ -239,6 +252,20 @@ function DashboardContent() {
     setReport(null);
     setSelectedRepo(null);
     setAnalyzeError("");
+  };
+
+  const disconnectGithub = async () => {
+    setDisconnecting(true);
+    try {
+      await api.post("/github/disconnect");
+      await refreshUser();
+      setRepos([]);
+      clearReport();
+    } catch {
+      // ignore; UI stays as-is
+    } finally {
+      setDisconnecting(false);
+    }
   };
 
   if (authLoading || !user) {
@@ -251,16 +278,29 @@ function DashboardContent() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10">
-      <div className="mb-10">
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Hello, <span className="text-slate-200">{user.username}</span>
-          {user.github_username && (
-            <span className="inline-flex items-center gap-1 ml-2">
-              · <GitFork className="w-3.5 h-3.5" /> {user.github_username}
-            </span>
-          )}
-        </p>
+      <div className="mb-10 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Hello, <span className="text-slate-200">{user.username}</span>
+            {user.github_username && (
+              <span className="inline-flex items-center gap-1 ml-2">
+                · <GitFork className="w-3.5 h-3.5" /> {user.github_username}
+              </span>
+            )}
+          </p>
+        </div>
+        {user.github_username && (
+          <button
+            onClick={disconnectGithub}
+            disabled={disconnecting}
+            title="Unlink this GitHub account so you can connect a different one"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors disabled:opacity-50 shrink-0"
+          >
+            {disconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+            <span>{disconnecting ? "Disconnecting…" : "Disconnect GitHub"}</span>
+          </button>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-[360px_1fr] gap-8">
@@ -269,6 +309,7 @@ function DashboardContent() {
           <RepoPanel
             repos={repos}
             reposLoading={reposLoading}
+            reposError={reposError}
             connectLoading={connectLoading}
             analyzing={analyzing}
             selectedRepo={selectedRepo}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Code2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { apiErrorMessage } from "../api";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Alert from "../components/ui/Alert";
@@ -23,8 +24,8 @@ export default function LoginPage() {
     try {
       await login(form.email, form.password);
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Login failed. Check your credentials.");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Login failed. Check your credentials."));
     } finally {
       setLoading(false);
     }
@@ -38,7 +39,7 @@ export default function LoginPage() {
             <Code2 className="w-6 h-6 text-indigo-400" />
           </div>
           <h1 className="text-2xl font-bold text-white">Welcome back</h1>
-          <p className="text-slate-400 text-sm">Sign in to your CodeScope account</p>
+          <p className="text-slate-400 text-sm">Sign in to your CodeAnalysis account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

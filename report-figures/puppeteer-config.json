@@ -1,0 +1,8 @@
+{
+  "executablePath": "/Users/rohanthapa/.cache/puppeteer/chrome-headless-shell/mac_arm-148.0.7778.97/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+  "headless": "shell",
+  "args": [
+    "--no-sandbox",
+    "--disable-setuid-sandbox"
+  ]
+}

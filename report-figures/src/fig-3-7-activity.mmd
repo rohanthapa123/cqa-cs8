@@ -1,0 +1,13 @@
+flowchart TB
+  s([Start]) --> login[Login]
+  login --> connect[Connect GitHub]
+  connect --> browse[Browse Repositories]
+  browse --> select[Select Repository]
+  select --> clone[Clone Repository]
+  clone --> check{Is Python<br/>project?}
+  check -- No --> fail[Mark Failed / Notify]
+  check -- Yes --> run[Run Analyses]
+  run --> score[Compute Health Score]
+  score --> show[Show Results &<br/>Download Report]
+  show --> e([End])
+  fail --> e

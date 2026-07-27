@@ -1,0 +1,16 @@
+sequenceDiagram
+  actor User
+  participant FE as Frontend
+  participant BE as FastAPI Backend
+  participant GH as GitHub API
+  participant EN as Analysis Engine
+  participant DB as PostgreSQL
+  User->>FE: Select repository
+  FE->>BE: POST /analyze
+  BE->>GH: Clone repository (shallow)
+  GH-->>BE: Source files
+  BE->>EN: Run complexity / duplication / maintainability
+  EN-->>BE: Metrics + health score
+  BE->>DB: Store analysis metadata
+  BE-->>FE: AnalyzeResponse
+  FE-->>User: Show dashboard & report

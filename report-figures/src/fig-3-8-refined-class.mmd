@@ -1,0 +1,41 @@
+classDiagram
+  class User {
+    +int id
+    +string username
+    +string email
+    +string password
+    +string role
+    +string github_username
+  }
+  class Admin {
+    +manageUsers()
+    +monitorAnalyses()
+  }
+  class Repository {
+    +int id
+    +string name
+    +string url
+    +string language
+    +int github_id
+  }
+  class Analysis {
+    +int id
+    +string status
+    +datetime created_at
+    +run()
+  }
+  class Metric {
+    +float avg_complexity
+    +float duplication_pct
+    +float maintainability_index
+  }
+  class Report {
+    +int health_score
+    +string summary
+    +export()
+  }
+  User <|-- Admin
+  User "1" o-- "*" Analysis
+  Repository "1" o-- "*" Analysis
+  Analysis "1" *-- "1" Metric
+  Analysis "1" *-- "1" Report

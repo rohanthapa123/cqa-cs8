@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Code2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { apiErrorMessage } from "../api";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Alert from "../components/ui/Alert";
@@ -32,8 +33,8 @@ export default function SignupPage() {
     try {
       await signup(form.email, form.username, form.password);
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Signup failed. Please try again.");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Signup failed. Please try again."));
     } finally {
       setLoading(false);
     }

@@ -1,12 +1,17 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from backend.core.config import settings
 
-engine = create_engine(
-    settings.database_url,
-    connect_args={"check_same_thread": False},
+# SQLite needs check_same_thread=False for FastAPI's threaded request handling;
+# other backends (e.g. PostgreSQL) must not receive that argument.
+connect_args = (
+    {"check_same_thread": False}
+    if settings.database_url.startswith("sqlite")
+    else {}
 )
+
+engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

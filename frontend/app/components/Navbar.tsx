@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Code2, LogOut, LayoutDashboard, GitFork } from "lucide-react";
+import { Code2, LogOut, LayoutDashboard, GitFork, Shield } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
@@ -21,7 +21,7 @@ export default function Navbar() {
           <div className="p-1.5 rounded-lg bg-indigo-500/10 ring-1 ring-indigo-500/20 group-hover:bg-indigo-500/20 transition-colors">
             <Code2 className="w-4 h-4 text-indigo-400" />
           </div>
-          <span className="font-semibold text-slate-200">CodeScope</span>
+          <span className="font-semibold text-slate-200">CodeAnalysis</span>
         </Link>
 
         <div className="flex items-center gap-2">
@@ -32,6 +32,15 @@ export default function Navbar() {
                   ? <><GitFork className="w-3.5 h-3.5" />{user.github_username}</>
                   : user.username}
               </span>
+              {user.role === "admin" && (
+                <Link
+                  href="/admin"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 transition-colors"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span className="hidden sm:block">Admin</span>
+                </Link>
+              )}
               <Link
                 href="/dashboard"
                 className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"

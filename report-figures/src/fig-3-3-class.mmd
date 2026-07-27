@@ -1,0 +1,40 @@
+classDiagram
+  class User {
+    +int id
+    +string username
+    +string email
+    +string role
+    +register()
+    +login()
+  }
+  class Repository {
+    +int id
+    +string name
+    +string url
+    +string language
+  }
+  class Analysis {
+    +int id
+    +string status
+    +datetime created_at
+    +run()
+  }
+  class Metric {
+    +float avg_complexity
+    +float duplication
+    +float maintainability
+  }
+  class Report {
+    +int health_score
+    +string summary
+    +download()
+  }
+  class Admin {
+    +manageUsers()
+    +monitorAnalyses()
+  }
+  User "1" --> "*" Analysis
+  Repository "1" --> "*" Analysis
+  Analysis "1" --> "1" Metric
+  Analysis "1" --> "1" Report
+  Admin --|> User

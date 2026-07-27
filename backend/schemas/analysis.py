@@ -1,46 +1,115 @@
 from pydantic import BaseModel, HttpUrl
-from typing import List
+from typing import Dict, List
 
 
 class AnalyzeRequest(BaseModel):
     repo_url: HttpUrl
 
 
-# --- cyclomatic complexity ---
+# ---------------------------------------------------------------------------
+# 1. Complexity (Cyclomatic / McCabe)
+# ---------------------------------------------------------------------------
 
 class FunctionComplexity(BaseModel):
     name: str
     complexity: int
     lineno: int
+    is_high_risk: bool
 
 
 class FileComplexity(BaseModel):
     file_path: str
     functions: List[FunctionComplexity]
+    average_complexity: float
+    total_complexity: int
+    max_complexity: int
+    function_count: int
 
 
-# --- duplicate detection ---
-
-class SimilarityResult(BaseModel):
-    file_pair: List[str]
-    similarity: float
-
-
-# --- time complexity ---
-
-class FunctionTimeComplexity(BaseModel):
+class HighRiskFunction(BaseModel):
     name: str
+    complexity: int
     lineno: int
-    complexity: str
-    is_recursive: bool
-
-
-class FileTimeComplexity(BaseModel):
     file_path: str
-    functions: List[FunctionTimeComplexity]
 
 
-# --- bad practices ---
+class ComplexityReport(BaseModel):
+    files: List[FileComplexity]
+    average_complexity: float
+    total_complexity: int
+    function_count: int
+    high_risk_functions: List[HighRiskFunction]
+    distribution: Dict[str, int]
+
+
+# ---------------------------------------------------------------------------
+# 2. Duplication (Winnowing)
+# ---------------------------------------------------------------------------
+
+class DuplicateBlock(BaseModel):
+    start: int
+    end: int
+    code: str
+
+
+class DuplicatePair(BaseModel):
+    file_a: str
+    file_b: str
+    similarity: float
+    blocks_a: List[DuplicateBlock]
+    blocks_b: List[DuplicateBlock]
+    shared_fingerprints: int
+
+
+class DuplicationReport(BaseModel):
+    duplicate_pairs: List[DuplicatePair]
+    duplication_percentage: float
+    duplicated_lines: int
+    total_lines: int
+    pair_count: int
+
+
+# ---------------------------------------------------------------------------
+# 3. Maintainability (Halstead + MI)
+# ---------------------------------------------------------------------------
+
+class HalsteadMetrics(BaseModel):
+    distinct_operators: int
+    distinct_operands: int
+    total_operators: int
+    total_operands: int
+    vocabulary: int
+    length: int
+    volume: float
+    difficulty: float
+    effort: float
+
+
+class FileMaintainability(BaseModel):
+    file_path: str
+    halstead: HalsteadMetrics
+    cyclomatic_complexity: int
+    loc: int
+    maintainability_index: float
+    rating: str
+
+
+class LowestMaintainability(BaseModel):
+    file_path: str
+    maintainability_index: float
+    rating: str
+
+
+class MaintainabilityReport(BaseModel):
+    files: List[FileMaintainability]
+    average_maintainability: float
+    rating: str
+    lowest_files: List[LowestMaintainability]
+
+
+# ---------------------------------------------------------------------------
+# Auxiliary: bad practices
+# ---------------------------------------------------------------------------
 
 class BadPractice(BaseModel):
     line: int
@@ -53,19 +122,36 @@ class FileBadPractices(BaseModel):
     issues: List[BadPractice]
 
 
-# --- test coverage ---
+# ---------------------------------------------------------------------------
+# Dashboard summary + health score
+# ---------------------------------------------------------------------------
 
-class TestCoverage(BaseModel):
-    has_tests: bool
-    test_files: List[str]
-    test_count: int
+class HealthScore(BaseModel):
+    score: int
+    grade: str
+    components: Dict[str, int]
+    weights: Dict[str, float]
 
 
-# --- top-level response ---
+class RepositorySummary(BaseModel):
+    repository_name: str
+    python_files: int
+    total_functions: int
+    total_classes: int
+    lines_of_code: int
+    average_complexity: float
+    duplication_percentage: float
+    average_maintainability: float
+    health_score: HealthScore
+
+
+# ---------------------------------------------------------------------------
+# top-level response
+# ---------------------------------------------------------------------------
 
 class AnalyzeResponse(BaseModel):
-    cyclomatic_complexity: List[FileComplexity]
-    similarity_matrix: List[SimilarityResult]
-    time_complexity: List[FileTimeComplexity]
+    summary: RepositorySummary
+    complexity: ComplexityReport
+    duplication: DuplicationReport
+    maintainability: MaintainabilityReport
     bad_practices: List[FileBadPractices]
-    test_coverage: TestCoverage

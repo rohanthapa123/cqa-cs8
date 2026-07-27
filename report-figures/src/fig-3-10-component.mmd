@@ -1,0 +1,29 @@
+flowchart TB
+  subgraph Client
+    FE["Next.js / React Frontend"]
+  end
+  subgraph Server["FastAPI Backend"]
+    AUTH["Auth Router (JWT)"]
+    GHR["GitHub Router (OAuth)"]
+    ANR["Analyze Router"]
+    ENG["Analysis Engine"]
+  end
+  subgraph Modules["Analysis Modules"]
+    CC["Complexity"]
+    DUP["Duplication (Winnowing)"]
+    MNT["Maintainability (Halstead + MI)"]
+    PR["Bad Practices"]
+  end
+  DB[("PostgreSQL")]
+  GH[["GitHub API"]]
+  FE --> AUTH
+  FE --> GHR
+  FE --> ANR
+  ANR --> ENG
+  ENG --> CC
+  ENG --> DUP
+  ENG --> MNT
+  ENG --> PR
+  AUTH --> DB
+  ANR --> DB
+  GHR --> GH

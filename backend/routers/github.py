@@ -76,9 +76,19 @@ async def list_repos(user=Depends(get_current_user)):
                 "Authorization": f"Bearer {user.github_access_token}",
                 "Accept": "application/json",
             },
-            params={"sort": "updated", "per_page": 50, "type": "all"},
+            params={"sort": "updated", "per_page": 100, "affiliation": "owner,collaborator,organization_member"},
         )
-        repos = res.json()
+
+    if res.status_code == 401:
+        # GitHub token revoked/expired (e.g. after Disconnect). Use 400, NOT 401 —
+        # a 401 here would trip the app's global "session expired -> logout" handler.
+        raise HTTPException(status_code=400, detail="GitHub authorization expired. Please disconnect and reconnect your GitHub account.")
+    if res.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"GitHub API error ({res.status_code}): {res.text[:200]}")
+
+    repos = res.json()
+    if not isinstance(repos, list):
+        raise HTTPException(status_code=502, detail=f"Unexpected GitHub response: {str(repos)[:200]}")
 
     return [
         {
@@ -95,3 +105,32 @@ async def list_repos(user=Depends(get_current_user)):
         for r in repos
         if isinstance(r, dict) and "name" in r
     ]
+
+
+@router.post("/disconnect")
+async def disconnect_github(user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Unlink the connected GitHub account so a different one can be linked.
+
+    Also revokes the OAuth grant on GitHub's side (best-effort) so the next
+    connect shows the authorization screen again instead of silently
+    re-linking the same account.
+    """
+    token = user.github_access_token
+    if token:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.request(
+                    "DELETE",
+                    f"{GITHUB_API_URL}/applications/{settings.github_client_id}/grant",
+                    auth=(settings.github_client_id, settings.github_client_secret),
+                    json={"access_token": token},
+                    headers={"Accept": "application/vnd.github+json"},
+                )
+        except Exception:
+            pass  # best-effort: still clear the local link even if revoke fails
+
+    user.github_access_token = None
+    user.github_username = None
+    db.commit()
+    return {"status": "disconnected"}

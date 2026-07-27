@@ -1,0 +1,14 @@
+flowchart TB
+  browser["Web Browser<br/>(Client Device)"]
+  subgraph cloud["Cloud Server"]
+    proxy["Reverse Proxy"]
+    fenode["Next.js Server<br/>(Frontend)"]
+    benode["FastAPI Server<br/>(Backend + Analysis Engine)"]
+    db[("PostgreSQL Database")]
+  end
+  gh[["GitHub API"]]
+  browser -->|HTTPS| proxy
+  proxy --> fenode
+  proxy --> benode
+  benode --> db
+  benode -->|OAuth / Clone| gh

@@ -38,6 +38,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     username: str
+    role: str = "user"
     github_username: Optional[str] = None
 
     model_config = {"from_attributes": True}

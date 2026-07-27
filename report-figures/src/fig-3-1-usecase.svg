@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="920" viewBox="0 0 1000 920" font-family="Georgia, 'Times New Roman', serif">
+  <rect x="0" y="0" width="1000" height="920" fill="#ffffff"/>
+
+  <!-- System boundary (sharp corners) -->
+  <rect x="320" y="70" width="460" height="810" fill="#f8f9fb" stroke="#374151" stroke-width="2"/>
+  <text x="550" y="104" text-anchor="middle" font-size="20" font-weight="bold" fill="#1f2430">Code Analyzer System</text>
+
+  <!-- Association lines (under nodes) -->
+  <g stroke="#5b6472" stroke-width="1.6" fill="none">
+    <!-- User (left) -> use cases -->
+    <line x1="124" y1="372" x2="432" y2="150"/>
+    <line x1="124" y1="372" x2="432" y2="242"/>
+    <line x1="124" y1="372" x2="432" y2="334"/>
+    <line x1="124" y1="372" x2="432" y2="426"/>
+    <line x1="124" y1="372" x2="432" y2="518"/>
+    <line x1="124" y1="372" x2="432" y2="610"/>
+    <!-- Administrator (right) -> use cases -->
+    <line x1="876" y1="768" x2="668" y2="730"/>
+    <line x1="876" y1="768" x2="668" y2="822"/>
+  </g>
+
+  <!-- Use case ovals (white fill, indigo outline) -->
+  <g fill="#ffffff" stroke="#4f46e5" stroke-width="2">
+    <ellipse cx="550" cy="150" rx="118" ry="30"/>
+    <ellipse cx="550" cy="242" rx="118" ry="30"/>
+    <ellipse cx="550" cy="334" rx="118" ry="30"/>
+    <ellipse cx="550" cy="426" rx="118" ry="30"/>
+    <ellipse cx="550" cy="518" rx="118" ry="30"/>
+    <ellipse cx="550" cy="610" rx="118" ry="30"/>
+    <ellipse cx="550" cy="730" rx="118" ry="30"/>
+    <ellipse cx="550" cy="822" rx="118" ry="30"/>
+  </g>
+  <g text-anchor="middle" font-size="17" fill="#1f2430">
+    <text x="550" y="156">Register / Login</text>
+    <text x="550" y="248">Connect GitHub</text>
+    <text x="550" y="340">Browse Repositories</text>
+    <text x="550" y="432">Run Analysis</text>
+    <text x="550" y="524">View Dashboard</text>
+    <text x="550" y="616">Download Report</text>
+    <text x="550" y="736">Manage Users</text>
+    <text x="550" y="828">Monitor Analyses</text>
+  </g>
+
+  <!-- Actors (line stick figures) -->
+  <g stroke="#1f2430" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <!-- User / Developer (left) @ (100,380) -->
+    <circle cx="100" cy="338" r="15" fill="#ffffff"/>
+    <line x1="100" y1="353" x2="100" y2="398"/>
+    <line x1="76" y1="372" x2="124" y2="372"/>
+    <line x1="100" y1="398" x2="80" y2="430"/>
+    <line x1="100" y1="398" x2="120" y2="430"/>
+    <!-- Administrator (right) @ (900,776) -->
+    <circle cx="900" cy="734" r="15" fill="#ffffff"/>
+    <line x1="900" y1="749" x2="900" y2="794"/>
+    <line x1="876" y1="768" x2="924" y2="768"/>
+    <line x1="900" y1="794" x2="880" y2="826"/>
+    <line x1="900" y1="794" x2="920" y2="826"/>
+  </g>
+  <g text-anchor="middle" font-size="17" fill="#1f2430">
+    <text x="100" y="456">User / Developer</text>
+    <text x="900" y="852">Administrator</text>
+  </g>
+</svg>

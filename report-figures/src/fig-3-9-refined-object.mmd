@@ -1,0 +1,12 @@
+flowchart TB
+  user1["user1 : User<br/>id = 001<br/>username = rohan<br/>role = User"]
+  repo1["repo1 : Repository<br/>name = sample-project<br/>language = Python<br/>github_id = 12345"]
+  analysis1["analysis1 : Analysis<br/>status = Completed"]
+  metric1["metric1 : Metric<br/>avg_complexity = 5.0<br/>duplication = 12%<br/>MI = 71"]
+  report1["report1 : Report<br/>health_score = 78"]
+  admin1["admin1 : Admin<br/>role = Admin"]
+  user1 --> analysis1
+  repo1 --> analysis1
+  analysis1 --> metric1
+  analysis1 --> report1
+  admin1 -. manages .-> user1

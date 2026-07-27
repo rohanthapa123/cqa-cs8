@@ -1,0 +1,8 @@
+flowchart LR
+  src["Source Code"] --> ast["AST Normalization<br/>(identifiers to tokens)"]
+  ast --> kg["k-gram<br/>Generation"]
+  kg --> hash["Hash each<br/>k-gram"]
+  hash --> win["Sliding Window<br/>select min hash"]
+  win --> fp["Fingerprints"]
+  fp --> cmp["Compare pairs<br/>(Jaccard similarity)"]
+  cmp --> dup["Duplicate blocks<br/>+ line ranges + %"]

@@ -8,7 +8,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CodeScope — Intelligent Python Code Analyzer",
+  title: "CodeAnalysis — Intelligent Python Code Analyzer",
   description: "Analyze Python repositories for complexity, duplicates, time complexity, and bad practices.",
 };
 

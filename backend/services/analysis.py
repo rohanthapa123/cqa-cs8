@@ -1,15 +1,28 @@
+"""
+Analysis orchestrator.
+
+Coordinates the three core analysis modules — Complexity, Duplication and
+Maintainability — plus the auxiliary Bad-practices panel, and produces the
+repository dashboard summary and Overall Health Score.
+
+The tool behaves like a lightweight, Python-focused SonarQube: clone → parse →
+measure → score → clean up.
+"""
+
 import ast
 import os
 import shutil
 import tempfile
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 
 from git import Repo
-from radon.complexity import cc_visit
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+
+from backend.services import complexity, duplication, maintainability, practices
 
 PYTHON_INDICATORS = {"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"}
+
+# Overall Health Score weights (must sum to 1.0).
+HEALTH_WEIGHTS = {"maintainability": 0.40, "complexity": 0.30, "duplication": 0.30}
 
 
 # ---------------------------------------------------------------------------
@@ -21,13 +34,13 @@ def clone_repo(github_url: str) -> str:
     try:
         Repo.clone_from(github_url, temp_dir, depth=1)
     except Exception as e:
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to clone repository: {e}")
     return temp_dir
 
 
 def is_python_project(root_dir: str) -> bool:
-    for dirpath, _, filenames in os.walk(root_dir):
+    for _, _, filenames in os.walk(root_dir):
         for fname in filenames:
             if fname.endswith(".py") or fname in PYTHON_INDICATORS:
                 return True
@@ -43,166 +56,84 @@ def collect_python_files(root_dir: str) -> List[str]:
     return py_files
 
 
-# ---------------------------------------------------------------------------
-# cyclomatic complexity (radon)
-# ---------------------------------------------------------------------------
-
-def compute_cyclomatic_complexity(file_path: str) -> Dict[str, Dict[str, int]]:
-    with open(file_path, "r", encoding="utf-8") as f:
-        source = f.read()
-    try:
-        analysis = cc_visit(source)
-    except Exception:
-        analysis = []
-    return {block.name: {"complexity": block.complexity, "lineno": block.lineno} for block in analysis}
+def _read(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
 
 
 # ---------------------------------------------------------------------------
-# duplicate detection (TF-IDF + cosine similarity)
+# per-file structural stats (LOC, functions, classes)
 # ---------------------------------------------------------------------------
 
-def compute_tfidf_cosine_similarity(
-    file_paths: List[str],
-) -> Tuple[Dict[str, List[float]], List[Tuple[str, str, float]]]:
-    documents = []
-    for fp in file_paths:
-        with open(fp, "r", encoding="utf-8") as f:
-            documents.append(f.read())
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(documents)
-    tfidf_vectors = {fp: tfidf_matrix[idx].toarray().flatten().tolist() for idx, fp in enumerate(file_paths)}
-    sim_matrix = cosine_similarity(tfidf_matrix)
-    n = len(file_paths)
-    pairs = [
-        (file_paths[i], file_paths[j], sim_matrix[i, j])
-        for i in range(n)
-        for j in range(i + 1, n)
-    ]
-    top_pairs = sorted(pairs, key=lambda x: x[2], reverse=True)[:5]
-    return tfidf_vectors, top_pairs
+def file_stats(source: str) -> Dict[str, int]:
+    """Source lines of code (excluding blanks/comment-only lines) + counts."""
+    loc = 0
+    for raw in source.splitlines():
+        stripped = raw.strip()
+        if stripped and not stripped.startswith("#"):
+            loc += 1
 
-
-# ---------------------------------------------------------------------------
-# time complexity (AST loop-depth → Big-O)
-# ---------------------------------------------------------------------------
-
-def _max_loop_depth(node: ast.AST, depth: int = 0) -> int:
-    max_d = depth
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.For, ast.While)):
-            d = _max_loop_depth(child, depth + 1)
-        else:
-            d = _max_loop_depth(child, depth)
-        if d > max_d:
-            max_d = d
-    return max_d
-
-
-def _is_recursive(func_node: ast.FunctionDef) -> bool:
-    for node in ast.walk(func_node):
-        if node is func_node:
-            continue
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id == func_node.name:
-                return True
-            if isinstance(node.func, ast.Attribute) and node.func.attr == func_node.name:
-                return True
-    return False
-
-
-def _depth_to_bigo(depth: int, recursive: bool) -> str:
-    if recursive:
-        return "O(2^n)"
-    if depth == 0:
-        return "O(1)"
-    if depth == 1:
-        return "O(n)"
-    if depth == 2:
-        return "O(n^2)"
-    if depth == 3:
-        return "O(n^3)"
-    return f"O(n^{depth})"
-
-
-def compute_time_complexity(file_path: str) -> Dict[str, Dict]:
-    with open(file_path, "r", encoding="utf-8") as f:
-        source = f.read()
+    functions = classes = 0
     try:
         tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                functions += 1
+            elif isinstance(node, ast.ClassDef):
+                classes += 1
     except SyntaxError:
-        return {}
-    results = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            depth = _max_loop_depth(node)
-            recursive = _is_recursive(node)
-            results[node.name] = {
-                "complexity": _depth_to_bigo(depth, recursive),
-                "lineno": node.lineno,
-                "is_recursive": recursive,
-            }
-    return results
+        pass
+
+    return {"loc": loc, "functions": functions, "classes": classes}
 
 
 # ---------------------------------------------------------------------------
-# bad practices (AST)
+# Overall Health Score
 # ---------------------------------------------------------------------------
 
-def detect_bad_practices(file_path: str) -> List[Dict]:
-    with open(file_path, "r", encoding="utf-8") as f:
-        source = f.read()
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return []
-
-    issues = []
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ExceptHandler) and node.type is None:
-            issues.append({"line": node.lineno, "type": "bare_except", "message": "Bare except clause catches all exceptions"})
-
-        elif isinstance(node, ast.Global):
-            for name in node.names:
-                issues.append({"line": node.lineno, "type": "global_variable", "message": f"Global variable usage: '{name}'"})
-
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for default in node.args.defaults:
-                if isinstance(default, (ast.List, ast.Dict, ast.Set)):
-                    issues.append({"line": node.lineno, "type": "mutable_default_arg", "message": f"Mutable default argument in '{node.name}'"})
-            num_args = len(node.args.args)
-            if num_args > 5:
-                issues.append({"line": node.lineno, "type": "too_many_args", "message": f"'{node.name}' has {num_args} arguments (>5)"})
-
-        elif isinstance(node, ast.ImportFrom) and node.names:
-            for alias in node.names:
-                if alias.name == "*":
-                    issues.append({"line": node.lineno, "type": "wildcard_import", "message": f"Wildcard import from '{node.module}'"})
-
-        elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id in ("eval", "exec"):
-                issues.append({"line": node.lineno, "type": "dangerous_call", "message": f"Use of '{node.func.id}()' is a security risk"})
-
-    return issues
+def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    return max(low, min(high, value))
 
 
-# ---------------------------------------------------------------------------
-# test detection
-# ---------------------------------------------------------------------------
-
-def detect_tests(root_dir: str, py_files: List[str]) -> Dict:
+def compute_health_score(avg_maintainability: float, avg_complexity: float,
+                         duplication_percentage: float) -> Dict:
     """
-    Identifies test files by name convention (test_*.py / *_test.py)
-    and by presence of a tests/ or test/ directory.
+    Weighted 0-100 health score from the three core dimensions.
+
+    - maintainability: the average MI (already 0-100)
+    - complexity: 100 at avg CC <= 5, dropping to 0 by avg CC 25
+    - duplication: 100 minus the duplication percentage
     """
-    test_files = [
-        fp for fp in py_files
-        if os.path.basename(fp).startswith("test_") or os.path.basename(fp).endswith("_test.py")
-    ]
+    complexity_score = _clamp(100 - max(0.0, avg_complexity - 5) * 5)
+    duplication_score = _clamp(100 - duplication_percentage)
+    maintainability_score = _clamp(avg_maintainability)
+
+    score = (
+        HEALTH_WEIGHTS["maintainability"] * maintainability_score
+        + HEALTH_WEIGHTS["complexity"] * complexity_score
+        + HEALTH_WEIGHTS["duplication"] * duplication_score
+    )
+
+    if score >= 80:
+        grade = "A"
+    elif score >= 65:
+        grade = "B"
+    elif score >= 50:
+        grade = "C"
+    elif score >= 35:
+        grade = "D"
+    else:
+        grade = "F"
+
     return {
-        "has_tests": len(test_files) > 0,
-        "test_files": test_files,
-        "test_count": len(test_files),
+        "score": round(score),
+        "grade": grade,
+        "components": {
+            "maintainability": round(maintainability_score),
+            "complexity": round(complexity_score),
+            "duplication": round(duplication_score),
+        },
+        "weights": HEALTH_WEIGHTS,
     }
 
 
@@ -216,21 +147,72 @@ def analyze_repository(github_url: str) -> Dict:
         if not is_python_project(repo_path):
             raise ValueError("Not a Python project: no .py files or Python project files found")
 
-        py_files = collect_python_files(repo_path)
+        py_paths = collect_python_files(repo_path)
 
-        complexity_report = {fp: compute_cyclomatic_complexity(fp) for fp in py_files}
-        _, top_pairs = compute_tfidf_cosine_similarity(py_files)
-        similarity_dict = {f"{a}||{b}": sim for a, b, sim in top_pairs}
-        time_complexity_report = {fp: compute_time_complexity(fp) for fp in py_files}
-        bad_practices_report = {fp: detect_bad_practices(fp) for fp in py_files}
-        test_coverage = detect_tests(repo_path, py_files)
+        # (rel_path, source) — read once, reuse across every module.
+        files: List[Tuple[str, str]] = []
+        for abs_path in py_paths:
+            rel = os.path.relpath(abs_path, repo_path)
+            files.append((rel, _read(abs_path)))
+
+        stats_by_file = {rel: file_stats(src) for rel, src in files}
+        loc_by_file = {rel: stats_by_file[rel]["loc"] for rel, _ in files}
+
+        # --- core module 1: complexity ---
+        complexity_files = [complexity.analyze_file(rel, src) for rel, src in files]
+        complexity_summary = complexity.summarize(complexity_files)
+
+        # --- core module 2: duplication (winnowing) ---
+        duplication_report = duplication.analyze(files, loc_by_file)
+
+        # --- core module 3: maintainability (Halstead + MI) ---
+        cc_by_file = {f["file_path"]: f["total_complexity"] for f in complexity_files}
+        maintainability_files = [
+            maintainability.analyze_file(rel, src, cc_by_file.get(rel, 0), loc_by_file.get(rel, 0))
+            for rel, src in files
+        ]
+        maintainability_summary = maintainability.summarize(maintainability_files)
+
+        # --- auxiliary: bad practices ---
+        bad_practices = {rel: practices.detect(src) for rel, src in files}
+
+        # --- dashboard summary ---
+        total_functions = sum(s["functions"] for s in stats_by_file.values())
+        total_classes = sum(s["classes"] for s in stats_by_file.values())
+        total_loc = sum(s["loc"] for s in stats_by_file.values())
+
+        health = compute_health_score(
+            maintainability_summary["average_maintainability"],
+            complexity_summary["average_complexity"],
+            duplication_report["duplication_percentage"],
+        )
+
+        repo_name = github_url.rstrip("/").split("/")[-1].replace(".git", "")
+
+        summary = {
+            "repository_name": repo_name,
+            "python_files": len(files),
+            "total_functions": total_functions,
+            "total_classes": total_classes,
+            "lines_of_code": total_loc,
+            "average_complexity": complexity_summary["average_complexity"],
+            "duplication_percentage": duplication_report["duplication_percentage"],
+            "average_maintainability": maintainability_summary["average_maintainability"],
+            "health_score": health,
+        }
 
         return {
-            "cyclomatic_complexity": complexity_report,
-            "similarity_matrix": similarity_dict,
-            "time_complexity": time_complexity_report,
-            "bad_practices": bad_practices_report,
-            "test_coverage": test_coverage,
+            "summary": summary,
+            "complexity": {
+                "files": complexity_files,
+                **complexity_summary,
+            },
+            "duplication": duplication_report,
+            "maintainability": {
+                "files": maintainability_files,
+                **maintainability_summary,
+            },
+            "bad_practices": bad_practices,
         }
     finally:
         shutil.rmtree(repo_path, ignore_errors=True)

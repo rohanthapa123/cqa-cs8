@@ -1,122 +1,110 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, X, BarChart3, GitBranch, Zap, Shield, Download, FlaskConical } from "lucide-react";
+import { CheckCircle2, X, BarChart3, Copy, Gauge, Shield, Download, LayoutDashboard } from "lucide-react";
 import { AnalysisReport } from "../../types/analysis";
+import SummaryPanel from "./SummaryPanel";
 import ComplexityTab from "./ComplexityTab";
-import SimilarityTab from "./SimilarityTab";
-import TimeTab from "./TimeTab";
+import DuplicatesTab from "./DuplicatesTab";
+import MaintainabilityTab from "./MaintainabilityTab";
 import PracticesTab from "./PracticesTab";
-import TestsTab from "./TestsTab";
 
-type Tab = "complexity" | "similarity" | "time" | "practices" | "tests";
+type Tab = "overview" | "complexity" | "duplicates" | "maintainability" | "practices";
 
 const TABS: { id: Tab; label: string; Icon: React.ElementType }[] = [
-  { id: "complexity", label: "Cyclomatic", Icon: BarChart3 },
-  { id: "similarity", label: "Duplicates", Icon: GitBranch },
-  { id: "time", label: "Time Complexity", Icon: Zap },
+  { id: "overview", label: "Overview", Icon: LayoutDashboard },
+  { id: "complexity", label: "Complexity", Icon: BarChart3 },
+  { id: "duplicates", label: "Duplicates", Icon: Copy },
+  { id: "maintainability", label: "Maintainability", Icon: Gauge },
   { id: "practices", label: "Bad Practices", Icon: Shield },
-  { id: "tests", label: "Tests", Icon: FlaskConical },
 ];
 
-function generateMarkdownReport(repoName: string, report: AnalysisReport): string {
+function base(path: string) {
+  return path.split("/").pop() ?? path;
+}
+
+function generateMarkdownReport(report: AnalysisReport): string {
   const date = new Date().toISOString().split("T")[0];
-  const totalIssues = report.bad_practices.reduce((s, f) => s + f.issues.length, 0);
-  const highComplexity = report.cyclomatic_complexity
-    .flatMap((f) => f.functions)
-    .filter((fn) => fn.complexity > 10).length;
+  const s = report.summary;
+  const h = s.health_score;
 
   const lines: string[] = [
-    `# CodeScope Analysis Report`,
-    `**Repository:** ${repoName}`,
+    `# CodeAnalysis Report`,
+    `**Repository:** ${s.repository_name}`,
     `**Generated:** ${date}`,
+    ``,
+    `## Overall Repository Health`,
+    `**Health Score: ${h.score}/100 (Grade ${h.grade})**`,
+    ``,
+    `| Component | Score | Weight |`,
+    `|-----------|-------|--------|`,
+    `| Maintainability | ${h.components.maintainability} | ${Math.round(h.weights.maintainability * 100)}% |`,
+    `| Complexity | ${h.components.complexity} | ${Math.round(h.weights.complexity * 100)}% |`,
+    `| Duplication | ${h.components.duplication} | ${Math.round(h.weights.duplication * 100)}% |`,
     ``,
     `## Summary`,
     `| Metric | Value |`,
     `|--------|-------|`,
-    `| Files analyzed | ${report.cyclomatic_complexity.length} |`,
-    `| High-complexity functions (CC > 10) | ${highComplexity} |`,
-    `| Duplicate file pairs | ${report.similarity_matrix.length} |`,
-    `| Bad practice issues | ${totalIssues} |`,
+    `| Python files | ${s.python_files} |`,
+    `| Lines of code | ${s.lines_of_code} |`,
+    `| Total functions | ${s.total_functions} |`,
+    `| Total classes | ${s.total_classes} |`,
+    `| Average cyclomatic complexity | ${s.average_complexity} |`,
+    `| Duplicate code | ${s.duplication_percentage}% |`,
+    `| Average maintainability index | ${s.average_maintainability} |`,
     ``,
     `---`,
     ``,
     `## 1. Cyclomatic Complexity`,
+    `Average CC **${report.complexity.average_complexity}** across ${report.complexity.function_count} functions.`,
     ``,
   ];
 
-  for (const file of report.cyclomatic_complexity) {
-    lines.push(`### ${file.file_path.split("/").pop()}`);
-    lines.push(`\`${file.file_path}\``);
-    if (file.functions.length) {
-      lines.push(`| Function | CC | Line |`);
-      lines.push(`|----------|----|------|`);
-      for (const fn of file.functions) {
-        const flag = fn.complexity > 10 ? " ⚠️" : fn.complexity > 5 ? " ⚡" : "";
-        lines.push(`| \`${fn.name}\` | ${fn.complexity}${flag} | ${fn.lineno} |`);
-      }
-    } else {
-      lines.push(`_No functions found_`);
-    }
-    lines.push(``);
-  }
-
-  lines.push(`---`, ``, `## 2. Duplicate Detection (TF-IDF Similarity)`, ``);
-  if (report.similarity_matrix.length) {
-    lines.push(`| File A | File B | Similarity |`);
-    lines.push(`|--------|--------|-----------|`);
-    for (const sim of report.similarity_matrix) {
-      lines.push(
-        `| \`${sim.file_pair[0].split("/").pop()}\` | \`${sim.file_pair[1].split("/").pop()}\` | ${(sim.similarity * 100).toFixed(1)}% |`
-      );
+  if (report.complexity.high_risk_functions.length) {
+    lines.push(`### High-risk functions (CC > 10)`, ``, `| Function | File | CC | Line |`, `|----------|------|----|------|`);
+    for (const fn of report.complexity.high_risk_functions) {
+      lines.push(`| \`${fn.name}\` | ${base(fn.file_path)} | ${fn.complexity} | ${fn.lineno} |`);
     }
   } else {
-    lines.push(`_Not enough files to compare_`);
+    lines.push(`_No high-risk functions._`);
   }
 
-  lines.push(``, `---`, ``, `## 3. Time Complexity`, ``);
-  for (const file of report.time_complexity) {
-    lines.push(`### ${file.file_path.split("/").pop()}`);
-    if (file.functions.length) {
-      lines.push(`| Function | Complexity | Recursive | Line |`);
-      lines.push(`|----------|-----------|-----------|------|`);
-      for (const fn of file.functions) {
-        lines.push(`| \`${fn.name}\` | ${fn.complexity} | ${fn.is_recursive ? "Yes" : "No"} | ${fn.lineno} |`);
-      }
-    } else {
-      lines.push(`_No functions found_`);
+  lines.push(``, `---`, ``, `## 2. Duplicate Code Detection (Winnowing)`,
+    `Overall duplication: **${report.duplication.duplication_percentage}%** (${report.duplication.duplicated_lines}/${report.duplication.total_lines} lines).`, ``);
+  if (report.duplication.duplicate_pairs.length) {
+    lines.push(`| File A | File B | Similarity | Duplicate ranges (A) |`, `|--------|--------|-----------|----------------------|`);
+    for (const p of report.duplication.duplicate_pairs) {
+      const ranges = p.blocks_a.map((b) => `${b.start}-${b.end}`).join(", ") || "—";
+      lines.push(`| \`${base(p.file_a)}\` | \`${base(p.file_b)}\` | ${p.similarity}% | ${ranges} |`);
     }
-    lines.push(``);
+  } else {
+    lines.push(`_No significant duplication detected._`);
   }
 
-  lines.push(`---`, ``, `## 4. Bad Practices`, ``);
+  lines.push(``, `---`, ``, `## 3. Maintainability (Halstead + MI)`,
+    `Average Maintainability Index: **${report.maintainability.average_maintainability}** (${report.maintainability.rating}).`, ``);
+  if (report.maintainability.lowest_files.length) {
+    lines.push(`### Lowest-maintainability files`, ``, `| File | MI | Rating |`, `|------|----|--------|`);
+    for (const f of report.maintainability.lowest_files) {
+      lines.push(`| \`${base(f.file_path)}\` | ${f.maintainability_index} | ${f.rating} |`);
+    }
+  }
+
+  lines.push(``, `---`, ``, `## Bad Practices (auxiliary)`, ``);
   const filesWithIssues = report.bad_practices.filter((f) => f.issues.length);
   if (filesWithIssues.length) {
     for (const file of filesWithIssues) {
-      lines.push(`### ${file.file_path.split("/").pop()}`);
-      lines.push(`| Line | Type | Message |`);
-      lines.push(`|------|------|---------|`);
+      lines.push(`### ${base(file.file_path)}`, `| Line | Type | Message |`, `|------|------|---------|`);
       for (const issue of file.issues) {
         lines.push(`| L${issue.line} | \`${issue.type}\` | ${issue.message} |`);
       }
       lines.push(``);
     }
   } else {
-    lines.push(`✅ No bad practices detected`);
+    lines.push(`No bad practices detected.`);
   }
 
-  lines.push(``, `---`, ``, `## 5. Test Coverage`, ``);
-  if (report.test_coverage.has_tests) {
-    lines.push(`✅ **${report.test_coverage.test_count} test file(s) found**`, ``);
-    lines.push(`| Test File |`, `|-----------|`);
-    for (const fp of report.test_coverage.test_files) {
-      lines.push(`| \`${fp.split("/").slice(-2).join("/")}\` |`);
-    }
-  } else {
-    lines.push(`❌ **No tests found.** Consider adding test files matching \`test_*.py\` or \`*_test.py\`.`);
-  }
-
-  lines.push(``, `---`, `_Generated by [CodeScope](http://localhost:3000)_`);
+  lines.push(``, `---`, `_Generated by CodeAnalysis_`);
   return lines.join("\n");
 }
 
@@ -137,10 +125,10 @@ interface Props {
 }
 
 export default function ReportViewer({ repoName, report, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>("complexity");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   const handleDownload = () => {
-    const md = generateMarkdownReport(repoName, report);
+    const md = generateMarkdownReport(report);
     downloadFile(md, `${repoName}-analysis.md`, "text/markdown");
   };
 
@@ -152,7 +140,7 @@ export default function ReportViewer({ repoName, report, onClose }: Props) {
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-white truncate">{repoName}</p>
           <p className="text-xs text-slate-500">
-            {report.cyclomatic_complexity.length} file(s) analyzed
+            {report.summary.python_files} file(s) · Health {report.summary.health_score.score}/100
           </p>
         </div>
         <button
@@ -172,13 +160,13 @@ export default function ReportViewer({ repoName, report, onClose }: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800">
+      <div className="flex gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
             className={[
-              "flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all",
+              "flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
               activeTab === id ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-slate-200",
             ].join(" ")}
           >
@@ -189,11 +177,11 @@ export default function ReportViewer({ repoName, report, onClose }: Props) {
       </div>
 
       {/* Tab content */}
-      {activeTab === "complexity" && <ComplexityTab data={report.cyclomatic_complexity} />}
-      {activeTab === "similarity" && <SimilarityTab data={report.similarity_matrix} />}
-      {activeTab === "time" && <TimeTab data={report.time_complexity} />}
+      {activeTab === "overview" && <SummaryPanel summary={report.summary} />}
+      {activeTab === "complexity" && <ComplexityTab data={report.complexity} />}
+      {activeTab === "duplicates" && <DuplicatesTab data={report.duplication} />}
+      {activeTab === "maintainability" && <MaintainabilityTab data={report.maintainability} />}
       {activeTab === "practices" && <PracticesTab data={report.bad_practices} />}
-      {activeTab === "tests" && <TestsTab data={report.test_coverage} />}
     </div>
   );
 }

@@ -24,4 +24,13 @@ api.interceptors.response.use(
   }
 );
 
+/** Extract a human-readable message from an axios/API error. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+  }
+  return fallback;
+}
+
 export default api;
