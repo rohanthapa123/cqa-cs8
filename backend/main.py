@@ -12,16 +12,52 @@ from backend.routers.admin import router as admin_router
 from backend.routers.analyze import router as analyze_router
 from backend.routers.auth import router as auth_router
 from backend.routers.github import router as github_router
+from backend.routers.history import router as history_router
+from backend.routers.webhooks import router as webhooks_router
+
+# Columns added after the initial release. SQLite and Postgres both accept
+# `ALTER TABLE ... ADD COLUMN` for nullable columns, which is all we need.
+_ADDED_COLUMNS = {
+    "users": [
+        ("role", "VARCHAR NOT NULL DEFAULT 'user'"),
+    ],
+    "analyses": [
+        ("commit_sha", "VARCHAR"),
+        ("ref", "VARCHAR"),
+        ("metrics_json", "TEXT"),
+    ],
+}
 
 
 def _ensure_schema() -> None:
-    """Add the `role` column to pre-existing `users` tables that predate admin support."""
+    """
+    Bring pre-existing tables up to date with the current models.
+
+    `create_all` only creates missing *tables*, so a database created before
+    admin roles or trend snapshots existed would silently lack those columns.
+    """
     insp = inspect(engine)
-    if "users" in insp.get_table_names():
-        columns = {c["name"] for c in insp.get_columns("users")}
-        if "role" not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR NOT NULL DEFAULT 'user'"))
+    existing_tables = set(insp.get_table_names())
+
+    pending: list[str] = []
+    for table, columns in _ADDED_COLUMNS.items():
+        if table not in existing_tables:
+            continue
+        present = {c["name"] for c in insp.get_columns(table)}
+        pending += [
+            f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
+            for name, definition in columns
+            if name not in present
+        ]
+
+    if not pending:
+        return
+
+    # One connection and one transaction for the whole migration, so a partial
+    # apply cannot leave the schema half-upgraded.
+    with engine.begin() as conn:
+        for statement in pending:
+            conn.execute(text(statement))
 
 
 def _promote_admins() -> None:
@@ -61,4 +97,6 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(github_router)
 app.include_router(analyze_router)
+app.include_router(history_router)
+app.include_router(webhooks_router)
 app.include_router(admin_router)

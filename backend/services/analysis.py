@@ -1,23 +1,41 @@
 """
 Analysis orchestrator.
 
-Coordinates the three core analysis modules — Complexity, Duplication and
-Maintainability — plus the auxiliary Bad-practices panel, and produces the
-repository dashboard summary and Overall Health Score.
+Coordinates every analysis module and produces the repository dashboard
+summary and Overall Health Score.
 
-The tool behaves like a lightweight, Python-focused SonarQube: clone → parse →
-measure → score → clean up.
+Three *core* modules define the health score — Complexity, Duplication and
+Maintainability — and are joined by supporting panels: Security, Dead code,
+Type hints, behavioural git History (churn, hotspots, coupling, bus factor)
+and the auxiliary Bad-practices linter.
+
+Snapshot modules (everything driven by the AST) read from one shared
+`(relative_path, source)` list so each file is read from disk exactly once.
+The History module works from the commit log instead, and needs the clone to
+carry real history — see `settings.history_clone_depth`.
+
+Flow: clone → parse → measure → score → clean up.
 """
 
 import ast
 import os
 import shutil
 import tempfile
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from git import Repo
 
-from backend.services import complexity, duplication, maintainability, practices
+from backend.core.config import settings
+from backend.services import (
+    complexity,
+    deadcode,
+    duplication,
+    history,
+    maintainability,
+    practices,
+    security,
+    typehints,
+)
 
 PYTHON_INDICATORS = {"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile"}
 
@@ -29,14 +47,36 @@ HEALTH_WEIGHTS = {"maintainability": 0.40, "complexity": 0.30, "duplication": 0.
 # repo helpers
 # ---------------------------------------------------------------------------
 
-def clone_repo(github_url: str) -> str:
+def clone_repo(github_url: str, ref: Optional[str] = None, depth: Optional[int] = None) -> str:
+    """
+    Shallow-clone a repository into a temporary directory.
+
+    The clone is deep enough for behavioural analysis rather than `depth=1`:
+    churn, hotspots, coupling and bus factor all need a commit log to read.
+
+    `ref` fetches and checks out an arbitrary git ref — used by the PR
+    integration to analyse `refs/pull/<n>/head`, which a plain clone of the
+    default branch would never contain.
+    """
     temp_dir = tempfile.mkdtemp(prefix="repo_clone_")
+    depth = depth or settings.history_clone_depth
     try:
-        Repo.clone_from(github_url, temp_dir, depth=1)
+        repo = Repo.clone_from(github_url, temp_dir, depth=depth)
+        if ref:
+            repo.git.fetch("origin", ref, depth=depth)
+            repo.git.checkout("FETCH_HEAD")
     except Exception as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to clone repository: {e}")
     return temp_dir
+
+
+def head_commit(repo_path: str) -> Optional[str]:
+    """SHA of the analysed commit, recorded so runs can be traced back to code."""
+    try:
+        return Repo(repo_path).head.commit.hexsha
+    except Exception:
+        return None
 
 
 def is_python_project(root_dir: str) -> bool:
@@ -141,8 +181,8 @@ def compute_health_score(avg_maintainability: float, avg_complexity: float,
 # orchestrator
 # ---------------------------------------------------------------------------
 
-def analyze_repository(github_url: str) -> Dict:
-    repo_path = clone_repo(github_url)
+def analyze_repository(github_url: str, ref: Optional[str] = None) -> Dict:
+    repo_path = clone_repo(github_url, ref=ref)
     try:
         if not is_python_project(repo_path):
             raise ValueError("Not a Python project: no .py files or Python project files found")
@@ -173,13 +213,29 @@ def analyze_repository(github_url: str) -> Dict:
         ]
         maintainability_summary = maintainability.summarize(maintainability_files)
 
-        # --- auxiliary: bad practices ---
-        bad_practices = {rel: practices.detect(src) for rel, src in files}
-
-        # --- dashboard summary ---
+        # --- repository totals (also feed the supporting modules below) ---
         total_functions = sum(s["functions"] for s in stats_by_file.values())
         total_classes = sum(s["classes"] for s in stats_by_file.values())
         total_loc = sum(s["loc"] for s in stats_by_file.values())
+
+        # --- supporting module: security ---
+        security_report = security.analyze(
+            files, root_dir=repo_path, scan_deps=settings.enable_dependency_scan,
+            total_loc=total_loc,
+        )
+
+        # --- supporting module: dead code ---
+        dead_code_report = deadcode.analyze(files, total_loc=total_loc)
+
+        # --- supporting module: type hint coverage ---
+        type_hints_report = typehints.analyze(files)
+
+        # --- supporting module: behavioural git history ---
+        # Hotspots need per-file complexity to multiply churn against.
+        history_report = history.analyze(repo_path, complexity_by_file=cc_by_file)
+
+        # --- auxiliary: bad practices ---
+        bad_practices = {rel: practices.detect(src) for rel, src in files}
 
         health = compute_health_score(
             maintainability_summary["average_maintainability"],
@@ -198,11 +254,15 @@ def analyze_repository(github_url: str) -> Dict:
             "average_complexity": complexity_summary["average_complexity"],
             "duplication_percentage": duplication_report["duplication_percentage"],
             "average_maintainability": maintainability_summary["average_maintainability"],
+            "security_score": security_report["security_score"],
+            "type_hint_coverage": type_hints_report["coverage"],
+            "dead_code_items": dead_code_report["total_items"],
             "health_score": health,
         }
 
         return {
             "summary": summary,
+            "commit_sha": head_commit(repo_path),
             "complexity": {
                 "files": complexity_files,
                 **complexity_summary,
@@ -212,6 +272,10 @@ def analyze_repository(github_url: str) -> Dict:
                 "files": maintainability_files,
                 **maintainability_summary,
             },
+            "security": security_report,
+            "dead_code": dead_code_report,
+            "type_hints": type_hints_report,
+            "history": history_report,
             "bad_practices": bad_practices,
         }
     finally:

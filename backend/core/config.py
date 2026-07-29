@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/github/callback"
     frontend_url: str = "http://localhost:3000"
 
+    # Shared secret configured on the GitHub webhook; every delivery is
+    # HMAC-verified against it. Leave empty to disable the webhook endpoint.
+    github_webhook_secret: str = ""
+
+    # How many commits to fetch for behavioural analysis (churn, hotspots,
+    # coupling, bus factor). A depth of 1 makes those metrics impossible;
+    # higher values trade clone time for a longer history window.
+    history_clone_depth: int = 300
+
+    # Look up declared dependencies against the OSV.dev advisory database.
+    # Requires outbound network access from the backend.
+    enable_dependency_scan: bool = True
+
     # Comma-separated emails that are auto-promoted to admin on startup.
     admin_emails: str = ""
 
