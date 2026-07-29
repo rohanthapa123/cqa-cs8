@@ -160,6 +160,7 @@ class SecurityReport(BaseModel):
     severity_counts: Dict[str, int]
     total_issues: int
     test_issues: int = 0
+    blocking_issues: int = 0
     affected_files: int
     security_score: float
 

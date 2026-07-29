@@ -782,6 +782,12 @@ def analyze(files: Sequence[Tuple[str, str]], root_dir: Optional[str] = None,
     counts: Counter = Counter()
     test_issue_count = 0
 
+    # Findings serious enough to block a merge: critical/high severity in
+    # production code, plus every critical/high dependency advisory. Test-code
+    # findings are deliberately excluded — a fixture asserting that the scanner
+    # detects a fake AWS key must not fail the build that ships the scanner.
+    blocking_issues = 0
+
     for rel_path, source in files:
         is_test = _is_test_file(rel_path)
         issues = detect_code_issues(source)
@@ -807,6 +813,8 @@ def analyze(files: Sequence[Tuple[str, str]], root_dir: Optional[str] = None,
         issues.sort(key=lambda i: (SEVERITY_ORDER.index(i["severity"]), i["line"]))
         for issue in issues:
             counts[issue["severity"]] += 1
+            if not is_test and issue["severity"] in ("critical", "high"):
+                blocking_issues += 1
         if is_test:
             test_issue_count += len(issues)
 
@@ -835,6 +843,8 @@ def analyze(files: Sequence[Tuple[str, str]], root_dir: Optional[str] = None,
     worst_by_package: Dict[str, str] = {}
     for vuln in dependencies["vulnerabilities"]:
         counts[vuln["severity"]] += 1
+        if vuln["severity"] in ("critical", "high"):
+            blocking_issues += 1
         current = worst_by_package.get(vuln["package"])
         if current is None or SEVERITY_ORDER.index(vuln["severity"]) < SEVERITY_ORDER.index(current):
             worst_by_package[vuln["package"]] = vuln["severity"]
@@ -850,6 +860,7 @@ def analyze(files: Sequence[Tuple[str, str]], root_dir: Optional[str] = None,
         "severity_counts": severity_counts,
         "total_issues": total,
         "test_issues": test_issue_count,
+        "blocking_issues": blocking_issues,
         "affected_files": len(file_reports),
         "security_score": compute_security_score(code_counts, dependency_counts, total_loc),
     }
