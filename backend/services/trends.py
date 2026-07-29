@@ -91,7 +91,12 @@ def build_snapshot(report: Dict) -> Dict:
         "security_score": security.get("security_score", 100.0),
         "type_hint_coverage": report.get("type_hints", {}).get("coverage", 0.0),
         "high_risk_functions": len(report.get("complexity", {}).get("high_risk_functions", [])),
-        "critical_security_issues": severity.get("critical", 0) + severity.get("high", 0),
+        # Production-code and dependency findings only; test fixtures are
+        # excluded, since this metric is what the PR quality gate blocks on.
+        "critical_security_issues": security.get(
+            "blocking_issues",
+            severity.get("critical", 0) + severity.get("high", 0),
+        ),
         "dead_code_items": report.get("dead_code", {}).get("total_items", 0),
         "critical_hotspots": history.get("summary", {}).get("critical_hotspots", 0),
         "lines_of_code": summary.get("lines_of_code", 0),

@@ -321,3 +321,30 @@ def test_parses_pyproject_dependencies(tmp_path):
     parsed = {d["name"]: d for d in security.parse_requirements(str(tmp_path))}
     assert parsed["httpx"]["version"] == "0.27.0"
     assert parsed["rich"]["pinned"] is False
+
+
+# ---------------------------------------------------------------------------
+# blocking issues (what the PR quality gate acts on)
+# ---------------------------------------------------------------------------
+
+def test_production_critical_findings_are_blocking():
+    report = security.analyze([("app.py", "eval(payload)\n")], scan_deps=False)
+    assert report["blocking_issues"] == 1
+
+
+def test_test_code_findings_never_block():
+    # A fixture asserting the scanner detects a fake AWS key must not fail the
+    # build that ships the scanner.
+    source = 'KEY = "AKIAIOSFODNN7EXAMPLE"\n'
+    production = security.analyze([("app.py", source)], scan_deps=False)
+    tests = security.analyze([("tests/test_scanner.py", source)], scan_deps=False)
+
+    assert production["blocking_issues"] == 1
+    assert tests["blocking_issues"] == 0
+    assert tests["total_issues"] == 1  # still reported, just not blocking
+
+
+def test_medium_and_low_findings_do_not_block():
+    report = security.analyze([("app.py", "import hashlib\nhashlib.md5(x)\n")], scan_deps=False)
+    assert report["severity_counts"]["medium"] == 1
+    assert report["blocking_issues"] == 0
