@@ -20,6 +20,9 @@ from backend.routers.webhooks import router as webhooks_router
 _ADDED_COLUMNS = {
     "users": [
         ("role", "VARCHAR NOT NULL DEFAULT 'user'"),
+        ("github_refresh_token", "VARCHAR"),
+        ("github_token_expires_at", "TIMESTAMP"),
+        ("github_refresh_expires_at", "TIMESTAMP"),
     ],
     "analyses": [
         ("commit_sha", "VARCHAR"),

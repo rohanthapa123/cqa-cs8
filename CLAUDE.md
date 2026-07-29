@@ -75,6 +75,7 @@ GitHub delivers a `pull_request` event to `POST /webhooks/github` → HMAC signa
 - `schemas/auth.py` — `UserCreate`, `UserLogin`, `Token`, `UserResponse`.
 - `schemas/analysis.py` — all analysis Pydantic models, numbered by section to match the services.
 - `services/auth.py` — user CRUD + `authenticate_user`.
+- `services/github_auth.py` — GitHub token lifecycle. **The configured credentials are a GitHub App**, whose user tokens (`ghu_...`) expire after ~8 hours and rotate a refresh token valid ~6 months, so `ensure_fresh_token(db, user)` must be used instead of reading `user.github_access_token` directly. Refresh tokens are single-use — the response is always persisted in full. OAuth App tokens (`gho_...`) have no expiry; their columns stay NULL and refreshing is skipped, so both app types work.
 - `services/analysis.py` — orchestrator: repo helpers (`clone_repo` with optional `ref`, `head_commit`, `is_python_project`, `collect_python_files`), `file_stats` (LOC/functions/classes), `compute_health_score` (weights: maintainability 0.40 / complexity 0.30 / duplication 0.30), and `analyze_repository` which fans out to the modules below. AST modules share one `(rel_path, source)` list so each file is read once.
 - `services/complexity.py` — cyclomatic complexity per function/file + repo average, high-risk list, distribution (radon `cc_visit`).
 - `services/duplication.py` — Winnowing algorithm: AST token normalization → k-gram hashing (`K_GRAM`/`WINDOW`) → fingerprint selection → pairwise Jaccard similarity, duplicate line ranges, repo duplication %.

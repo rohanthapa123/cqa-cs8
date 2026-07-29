@@ -35,7 +35,7 @@ from backend.core.database import SessionLocal, get_db
 from backend.models.analysis import Analysis
 from backend.models.user import User
 from backend.routers.auth import get_current_user
-from backend.services import trends
+from backend.services import github_auth, trends
 from backend.services.analysis import analyze_repository
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -269,18 +269,32 @@ def render_comment(report: Dict, snapshot: Dict, comparison: Dict,
 # the analysis job
 # ---------------------------------------------------------------------------
 
-def run_pr_analysis(user_id: int, token: str, repo_full_name: str, clone_url: str,
+def run_pr_analysis(user_id: int, repo_full_name: str, clone_url: str,
                     pr_number: int, head_sha: str) -> None:
     """
     Analyse a pull request head and report back to GitHub.
 
     Runs off the request thread with its own database session, since the
-    request-scoped one is already closed by the time this executes.
+    request-scoped one is already closed by the time this executes. The token
+    is resolved *here* rather than captured when the job was queued — a GitHub
+    App token lasts about eight hours, and a job sitting behind a queue could
+    otherwise start with a dead one.
     """
-    set_commit_status(token, repo_full_name, head_sha, "pending", "Analysing pull request...")
-
     db: Session = SessionLocal()
     try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return
+
+        try:
+            token = github_auth.ensure_fresh_token(db, user)
+        except github_auth.GitHubAuthError:
+            # No usable credentials, so there is nothing to report *with* —
+            # posting a status is exactly what we cannot do.
+            return
+
+        set_commit_status(token, repo_full_name, head_sha, "pending", "Analysing pull request...")
+
         repo_name = repo_full_name.split("/")[-1]
         baseline = (
             db.query(Analysis)
@@ -428,7 +442,7 @@ async def github_webhook(
 
     background_tasks.add_task(
         run_pr_analysis,
-        actor.id, actor.github_access_token, repo_full_name, clone_url, pr_number, head_sha,
+        actor.id, repo_full_name, clone_url, pr_number, head_sha,
     )
     return {"status": "queued", "repository": repo_full_name, "pull_request": pr_number}
 
@@ -439,6 +453,7 @@ async def check_pull_request(
     pr_number: int,
     background_tasks: BackgroundTasks,
     user=Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Run the pull-request pipeline on demand.
@@ -449,10 +464,15 @@ async def check_pull_request(
     if not user.github_access_token:
         raise HTTPException(status_code=400, detail="GitHub account not connected")
 
+    try:
+        token = github_auth.ensure_fresh_token(db, user)
+    except github_auth.GitHubAuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.get(
             f"{GITHUB_API_URL}/repos/{repo_full_name}/pulls/{pr_number}",
-            headers=_headers(user.github_access_token),
+            headers=_headers(token),
         )
 
     if response.status_code == 404:
@@ -469,7 +489,7 @@ async def check_pull_request(
 
     background_tasks.add_task(
         run_pr_analysis,
-        user.id, user.github_access_token, repo_full_name, clone_url, pr_number, head_sha,
+        user.id, repo_full_name, clone_url, pr_number, head_sha,
     )
     return {
         "status": "queued",
