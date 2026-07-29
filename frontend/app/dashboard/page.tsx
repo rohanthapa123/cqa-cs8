@@ -320,8 +320,11 @@ function DashboardContent() {
           />
         </aside>
 
-        {/* Right: analysis panel */}
-        <div className="min-h-[400px]">
+        {/* Right: analysis panel.
+            `min-w-0` is load-bearing: a grid item defaults to `min-width: auto`,
+            so without it the column refuses to shrink below its widest child and
+            wide report content pushes the whole page into horizontal scroll. */}
+        <div className="min-h-[400px] min-w-0">
           {!selectedRepo && !analyzing && !report && (
             <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center space-y-3 rounded-2xl border border-dashed border-slate-800">
               <BarChart3 className="w-8 h-8 text-slate-700" />
