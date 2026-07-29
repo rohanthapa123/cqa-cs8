@@ -1,5 +1,8 @@
 import { RepositorySummary } from "../../types/analysis";
-import { FileCode2, FunctionSquare, Boxes, AlignLeft, Activity, Copy, Gauge } from "lucide-react";
+import {
+  FileCode2, FunctionSquare, Boxes, AlignLeft, Activity, Copy, Gauge,
+  ShieldAlert, Type, Trash2, Award,
+} from "lucide-react";
 
 function gradeColor(grade: string) {
   switch (grade) {
@@ -87,7 +90,10 @@ export default function SummaryPanel({ summary }: { summary: RepositorySummary }
         <Stat Icon={Activity} label="Avg Complexity" value={summary.average_complexity} />
         <Stat Icon={Copy} label="Duplication" value={`${summary.duplication_percentage}%`} />
         <Stat Icon={Gauge} label="Avg Maintainability" value={summary.average_maintainability} />
-        <Stat Icon={Boxes} label="Health Grade" value={h.grade} />
+        <Stat Icon={Award} label="Health Grade" value={h.grade} />
+        <Stat Icon={ShieldAlert} label="Security Score" value={`${summary.security_score}/100`} />
+        <Stat Icon={Type} label="Type Hint Coverage" value={`${summary.type_hint_coverage}%`} />
+        <Stat Icon={Trash2} label="Dead Code Items" value={summary.dead_code_items} />
       </div>
     </div>
   );
